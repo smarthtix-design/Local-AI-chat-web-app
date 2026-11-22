@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Chat Demo (Host: Smarthtix / Linux Mint)</title>
+<style>
+  :root { --bg:#f3f4f1; --panel:#fff; --line:#d5d8d0; --text:#1d2420; --muted:#66706a; --user:#dbe9e2; --bot:#eef0ec; --accent:#1f6f55; --on:#fff; --bad:#a3341f; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141916; --panel:#1c231f; --line:#35403a; --text:#e6ebe7; --muted:#94a09a; --user:#264136; --bot:#26302b; --accent:#3fae88; --on:#0e1612; --bad:#e8826c; } }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); max-width: 760px; margin: 0 auto; padding: 14px; }
+  [hidden] { display: none !important; }
+  #app { height: 100%; display: flex; flex-direction: column; }
+  h1 { font-size: 1.15rem; margin: 0 0 8px; }
+  .sub, footer { font-size: .78rem; color: var(--muted); }
+  .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select, input, textarea { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+  details { margin-top: 8px; font-size: .9rem; }
+  details label { display: block; margin: 8px 0 2px; color: var(--muted); }
+  details textarea { width: 100%; }
+  #chat { flex: 1; min-height: 0; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 12px 0; }
+  .empty { color: var(--muted); }
+  .msg { margin: 8px 0 2px; padding: 9px 12px; border-radius: 8px; overflow-wrap: anywhere; line-height: 1.45; max-width: 90%; }
+  .user { background: var(--user); margin-left: auto; white-space: pre-wrap; }
+  .bot { background: var(--bot); }
+  .err { color: var(--bad); border: 1px solid var(--bad); }
+  .msg ul { margin: 4px 0; padding-left: 20px; }
+  .msg pre { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; overflow-x: auto; margin: 6px 0; }
+  .msg code { font-family: ui-monospace, monospace; font-size: .9em; }
+  .meta { font-size: .75rem; color: var(--muted); margin: 2px 0 8px 4px; }
+  #bar { display: flex; gap: 8px; }
+  #q, #codeIn { flex: 1; min-width: 0; }
+  button { font: inherit; padding: 9px 16px; border: 0; border-radius: 6px; background: var(--accent); color: var(--on); cursor: pointer; }
+  button.alt { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.link { background: none; color: var(--accent); padding: 0; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .badge { font-size: .75rem; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; vertical-align: middle; }
+  .tag { font-size: .72rem; padding: 1px 8px; border-radius: 10px; margin-right: 6px; color: var(--on); background: var(--accent); }
+  .tag.llm { background: var(--muted); }
+  .tag.web { background: #2b6cb0; color: #fff; }
+  .src { font-size: .75rem; color: var(--muted); margin-right: 6px; }
+  .src a { color: var(--accent); }
+  .msg.wait { color: var(--muted); font-style: italic; }
+  .hint { font-size: .85rem; border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; margin: 4px 0 8px; }
+  .files { list-style: none; padding: 0; margin: 4px 0 8px; }
+  .files li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: .85rem; }
+  .cite { font-size: .75em; vertical-align: super; color: var(--accent); text-decoration: none; }
+  .msg table { border-collapse: collapse; margin: 6px 0; font-size: .9em; display: block; overflow-x: auto; }
+  .msg td, .msg th { border: 1px solid var(--line); padding: 3px 8px; text-align: left; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chips button { font-size: .85rem; padding: 6px 12px; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <h1>Local Chat Demo <span class="sub">Host: Smarthtix / Linux Mint</span> <span class="badge" id="online">connecting...</span></h1>
+  <div class="tools">
+    <label class="sub" for="model">Model</label><select id="model"></select>
+    <label class="sub"><input type="checkbox" id="ragOn" checked> Use documents</label>
+    <label class="sub"><input type="checkbox" id="webOn" checked> Use internet</label>
+    <button class="alt" id="clear">Clear chat</button>
+    <button class="alt" id="export">Export chat</button>
+  </div>
+  <details>
+    <summary>Settings</summary>
+    <label>Temperature: <span id="tval"></span> (lower = more predictable)</label>
+    <input id="temp" type="range" min="0" max="1.5" step="0.1">
+    <label>Context size (tokens, more = more RAM)</label>
+    <select id="ctx"><option>512</option><option>1024</option><option>2048</option></select>
+    <label>Max reply length (tokens)</label>
+    <input id="pred" type="number" min="16" max="512" step="16">
+    <label>Past messages sent as context</label>
+    <input id="keep" type="number" min="1" max="10">
+    <label>System prompt</label>
+    <textarea id="sys" rows="2" maxlength="500"></textarea>
+  </details>
+  <details>
+    <summary>My documents</summary>
+    <div class="tools" style="margin-top:8px"><input type="file" id="file" accept=".pdf,.docx,.xlsx,.pptx,.csv,.html,.htm,.txt,.md"><button id="upload">Upload / update</button></div>
+    <div class="tools" style="margin-top:8px"><input id="url" type="url" placeholder="Or paste a web page address" style="flex:1;min-width:0"><button id="addurl">Add page</button></div>
+    <div class="sub" id="upMsg">Uploading a file with the same name replaces the old one.</div>
+    <b class="sub">Your files (private to this browser)</b><ul class="files" id="mine"></ul>
+    <b class="sub">Shared files</b><ul class="files" id="shared"></ul>
+  </details>
+  <div id="chat" aria-live="polite"></div>
+  <div id="bar">
+    <input id="q" maxlength="500" placeholder="Type your question (max 500 characters)" autocomplete="off">
+    <button id="mic" class="alt" hidden title="Speak your question">Mic</button>
+    <button id="ask">Ask</button>
+    <button id="stop" class="alt" hidden>Stop</button>
+  </div>
+  <footer>Chat and uploaded files stay tied to this browser (files are deleted after 7 days). When &ldquo;Use internet&rdquo; is on, your question may be sent to DuckDuckGo. Replies may be wrong; this is a learning project.</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+let history = store.get("tc.chat", []), ctl = null, lastError = "", maxMb = 5, suggestions = [];
+let vid = store.get("tc.vid", "");
+if (!/^[a-f0-9]{32}$/.test(vid)) { vid = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join(""); store.set("tc.vid", vid); }
+const VH = { "X-Visitor-Id": vid };
+const cfg = Object.assign({ model: "", temperature: 0.7, num_ctx: 1024, num_predict: 256, keep: 6,
+  system: "You are a helpful assistant. Answer briefly and clearly." }, store.get("tc.cfg", {}));
+
+// ---- tiny safe markdown: code blocks, `code`, **bold**, lists, headings ----
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const inline = s => esc(s).replace(/`([^`\n]+)`/g, "<code>$1</code>").replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+const attr = s => esc(s).replace(/"/g, "&quot;");
+function cite(html, srcs) {   // [1] in an answer becomes a link to numbered source 1
+  return html.replace(/\[(\d{1,2})\]/g, (m, n) => {
+    const s = srcs && srcs[n - 1];
+    if (!s) return m;
+    return /^https?:\/\//.test(s.url || "")
+      ? '<a class="cite" href="' + attr(s.url) + '" target="_blank" rel="noopener noreferrer">[' + n + "]</a>"
+      : '<span class="cite" title="' + attr(s.file || "") + '">[' + n + "]</span>";
+  });
+}
+function md(src, srcs) {
+  return src.split("```").map((part, i) => {
+    if (i % 2) return "<pre><code>" + esc(part.replace(/^[^\n]*\n/, "")) + "</code></pre>";
+    const lines = part.split("\n"), cells = l => l.trim().replace(/^\||\|$/g, "").split("|").map(c => inline(c.trim()));
+    let html = "", list = false;
+    for (let k = 0; k < lines.length; k++) {
+      const line = lines[k];
+      if (line.includes("|") && k + 1 < lines.length && lines[k + 1].includes("-") &&
+          /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[k + 1])) {   // table
+        if (list) { html += "</ul>"; list = false; }
+        html += "<table><tr>" + cells(line).map(c => "<th>" + c + "</th>").join("") + "</tr>"; k += 2;
+        for (; k < lines.length && lines[k].includes("|"); k++) html += "<tr>" + cells(lines[k]).map(c => "<td>" + c + "</td>").join("") + "</tr>";
+        html += "</table>"; k--; continue;
+      }
+      const li = line.match(/^\s*(?:[-*]|\d+[.)])\s+(.*)/);
+      if (li) { html += (list ? "" : "<ul>") + "<li>" + inline(li[1]) + "</li>"; list = true; continue; }
+      if (list) { html += "</ul>"; list = false; }
+      const h = line.match(/^#{1,3}\s+(.*)/);
+      html += h ? "<b>" + inline(h[1]) + "</b><br>" : line.trim() ? inline(line) + "<br>" : "";
+    }
+    return cite(html + (list ? "</ul>" : ""), srcs);
+  }).join("");
+}
+
+// ---- source tag: documents, internet, or model only ----
+const WHY = { none: "no matching document", off: "documents off", error: "documents unavailable" };
+function ragTag(r) {
+  const f = document.createDocumentFragment();
+  if (!r) return f;
+  const tag = document.createElement("span"), sc = x => typeof x === "number" ? " (" + x.toFixed(2) + ")" : "";
+  const kind = r.mode === "docs" ? "docs" : r.mode === "web" ? "web" : "model";
+  tag.className = "tag" + (kind === "model" ? " llm" : kind === "web" ? " web" : "");
+  tag.textContent = kind === "docs" ? "Documents" : kind === "web" ? (r.live ? "Internet (live data)" : "Internet")
+                  : "Model only" + ((r.why || WHY[r.mode]) ? " (" + (r.why || WHY[r.mode]) + ")" : "");
+  f.append(tag);
+  (r.sources || []).forEach((s, idx) => {
+    const span = document.createElement("span"); span.className = "src";
+    if (kind === "web") {
+      if (!/^https?:\/\//.test(s.url || "")) return;
+      const a = document.createElement("a");
+      let host = s.url; try { host = new URL(s.url).hostname.replace(/^www\./, ""); } catch {}
+      a.href = s.url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.title = s.title || s.url; a.textContent = host;
+      span.append("[" + (idx + 1) + "] ", a);
+    } else {
+      span.textContent = "[" + (idx + 1) + "] " + (s.scope === "mine" ? "your file " : "shared ") + s.file + (s.page ? " p." + s.page : "") + sc(s.similarity) + (s.kw ? " +keyword" : "");
+    }
+    f.append(span);
+  });
+  if (kind === "model" && typeof r.best === "number") {
+    const s = document.createElement("span"); s.className = "src";
+    s.textContent = "best document match " + r.best.toFixed(2) + " (needs " + (r.min ?? "?") + ")"; f.append(s);
+  }
+  if (r.query) { const s = document.createElement("span"); s.className = "src"; s.textContent = "searched: " + r.query; f.append(s); }
+  return f;
+}
+
+async function vote(m, v) {   // thumbs: only the answer's source type and score are sent, never the text
+  m.vote = v; store.set("tc.chat", history.slice(-60)); render();
+  try { await api("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vote: v, mode: m.rag && m.rag.mode, best: m.rag && m.rag.best, model: cfg.model }) }); } catch {}
+}
+
+// ---- rendering ----
+async function copy(t, btn) {
+  try { await navigator.clipboard.writeText(t); }
+  catch { const a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select(); document.execCommand("copy"); a.remove(); }
+  btn.textContent = "Copied"; setTimeout(() => btn.textContent = "Copy", 1500);
+}
+function row(m, isLast) {
+  const w = document.createElement("div"), b = document.createElement("div");
+  b.className = "msg " + (m.role === "user" ? "user" : "bot");
+  if (m.role === "user") b.textContent = m.content; else b.innerHTML = md(m.content, m.rag && m.rag.sources);
+  w.appendChild(b);
+  if (m.role === "assistant") {
+    const meta = document.createElement("div"), btn = document.createElement("button");
+    meta.className = "meta"; btn.className = "link"; btn.textContent = "Copy"; btn.onclick = () => copy(m.content, btn);
+    meta.append(ragTag(m.rag), btn, "  " + (m.stat || ""));
+    if (m.vote) meta.append(" \u00b7 " + (m.vote > 0 ? "Thanks for the feedback" : "Thanks, noted"));
+    else for (const [label, v] of [["Helpful", 1], ["Not helpful", -1]]) {
+      const fb = document.createElement("button"); fb.className = "link"; fb.textContent = label; fb.onclick = () => vote(m, v); meta.append(" \u00b7 ", fb);
+    }
+    if (isLast && m.rag && m.rag.mode !== "web" && !m.suggest) {
+      const wb = document.createElement("button"); wb.className = "link"; wb.textContent = "Not satisfied? Search the internet"; wb.onclick = retryWeb;
+      meta.append(" \u00b7 ", wb);
+    }
+    w.appendChild(meta);
+    if (isLast && m.suggest && m.rag && m.rag.mode !== "web") {   // the model said it is unsure
+      const hint = document.createElement("div"), hb = document.createElement("button");
+      hint.className = "hint"; hb.textContent = "Search the internet"; hb.onclick = retryWeb;
+      hint.append("This answer may be incomplete: the model may not know it (for example live or recent information). ", hb);
+      w.appendChild(hint);
+    }
+  }
+  return w;
+}
+function render() {
+  const box = $("chat"); box.innerHTML = "";
+  if (!history.length) {
+    box.innerHTML = '<div class="empty">Ask a basic question below, then keep chatting.</div>';
+    const chips = document.createElement("div"); chips.className = "chips";
+    suggestions.forEach(s => { const b = document.createElement("button"); b.className = "alt"; b.textContent = s; b.onclick = () => { $("q").value = s; ask(); }; chips.appendChild(b); });
+    box.appendChild(chips);
+  }
+  history.forEach((m, i) => box.appendChild(row(m, i === history.length - 1)));
+  if (lastError) { const e = document.createElement("div"); e.className = "msg err"; e.textContent = lastError; box.appendChild(e); }
+  box.scrollTop = box.scrollHeight;
+}
+function busy(on) {
+  $("ask").disabled = $("q").disabled = on; $("stop").hidden = !on;
+  if (!on) $("q").focus();
+}
+
+// ---- chat ----
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function ask() {
+  const text = $("q").value.trim();
+  if (!text || ctl) return;
+  if (history.length && history[history.length - 1].role === "user") history.pop();   // drop an unanswered question
+  lastError = ""; $("q").value = "";
+  history.push({ role: "user", content: text }); render();
+  await generate();
+}
+
+async function retryWeb() {
+  if (ctl || !history.length || history[history.length - 1].role !== "assistant") return;
+  history.pop(); lastError = ""; render(); await generate(true);   // same question, internet forced
+}
+
+async function generate(force = false) {
+  busy(true); ctl = new AbortController();
+  const bub = document.createElement("div"); bub.className = "msg bot"; bub.textContent = "Thinking...";
+  $("chat").appendChild(bub); $("chat").scrollTop = 1e9;
+  let full = "", stat = "", rag = null, suggest = "";
+  try {
+    const body = JSON.stringify({
+      model: cfg.model,
+      messages: [{ role: "system", content: cfg.system },
+                 ...history.slice(-cfg.keep).map(({ role, content }) => ({ role, content }))],
+      options: { temperature: cfg.temperature, num_ctx: cfg.num_ctx, num_predict: cfg.num_predict },
+      rag: $("ragOn").checked, web: $("webOn").checked, force_web: force
+    });
+    let res;
+    for (let tries = 1; ; tries++) {   // 503 = server is answering someone else: wait and retry
+      res = await fetch("/api/chat", { method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json", ...VH }, body });
+      if (res.status !== 503 || tries >= 6) break;
+      bub.textContent = "Another request is being answered. Waiting for your turn (" + tries + "/6)...";
+      await sleep(4000);
+      if (ctl.signal.aborted) throw new DOMException("", "AbortError");
+    }
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.error || "Server replied " + res.status);
+    }
+    let live = null;
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let j; try { j = JSON.parse(line); } catch { continue; }
+        if (j.error) throw new Error(j.error);
+        if (j.status) { bub.className = "msg bot wait"; bub.textContent = j.status; }
+        if (j.suggest_web) suggest = j.suggest_web;
+        if (j.rag) { rag = j.rag; live = document.createElement("div"); live.className = "meta"; live.append(ragTag(rag)); bub.after(live); }
+        if (j.message && j.message.content) { full += j.message.content; bub.className = "msg bot"; bub.innerHTML = md(full, rag && rag.sources); $("chat").scrollTop = 1e9; }
+        if (j.done && j.eval_duration) {
+          stat = j.eval_count + " tokens, " + (j.eval_count / (j.eval_duration / 1e9)).toFixed(1) + " tok/s, load " +
+                 ((j.load_duration || 0) / 1e9).toFixed(1) + "s, total " + (j.total_duration / 1e9).toFixed(1) + "s";
+        }
+      }
+    }
+    history.push({ role: "assistant", content: full || "(empty reply)", stat, rag, suggest });
+  } catch (e) {
+    if (e.name === "AbortError") {
+      if (full) history.push({ role: "assistant", content: full + " [stopped]", stat, rag });
+      else lastError = "Stopped.";
+    } else {
+      lastError = "Error: " + (e.message === "Failed to fetch" ? "cannot reach the server. Is server.py running?" : e.message);
+    }
+  } finally {
+    ctl = null; busy(false);
+    store.set("tc.chat", history.slice(-60)); render();
+  }
+}
+
+// ---- models, documents, live visitors ----
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { ...VH, ...(opts.headers || {}) } });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || "Server replied " + res.status);
+  return j;
+}
+async function loadModels() {
+  try {
+    const j = await api("/api/models");
+    if (!j.models.includes(cfg.model)) cfg.model = ["qwen2.5:1.5b", "tinyllama:latest"].find(x => j.models.includes(x)) || j.models[0] || "";
+    $("model").innerHTML = j.models.map(m => "<option>" + esc(m) + "</option>").join("");
+    $("model").value = cfg.model;
+  } catch (e) { lastError = "Error: " + e.message; }
+  render();
+}
+async function loadFiles() {
+  try {
+    const j = await api("/api/files");
+    maxMb = j.limits.max_mb;
+    $("mine").innerHTML = j.mine.length ? "" : '<li class="sub">None yet</li>';
+    j.mine.forEach(f => {
+      const li = document.createElement("li"), b = document.createElement("button");
+      li.append(f.name + " (" + f.chunks + " chunks)"); b.className = "link"; b.textContent = "Delete";
+      b.onclick = async () => { try { await api("/api/files?name=" + encodeURIComponent(f.name), { method: "DELETE" }); } catch (e) { $("upMsg").textContent = e.message; } loadFiles(); };
+      li.append(b); $("mine").appendChild(li);
+    });
+    $("shared").innerHTML = j.shared.length ? j.shared.map(n => "<li>" + esc(n) + "</li>").join("") : '<li class="sub">None</li>';
+  } catch (e) { $("upMsg").textContent = e.message; }
+}
+async function upload() {
+  const f = $("file").files[0];
+  if (!f) return ($("upMsg").textContent = "Choose a file first.");
+  if (f.size > maxMb * 1e6) return ($("upMsg").textContent = "File is too large (max " + maxMb + " MB).");
+  $("upload").disabled = true; $("upMsg").textContent = "Uploading and indexing " + f.name + "...";
+  try {
+    const j = await api("/api/upload?name=" + encodeURIComponent(f.name), { method: "POST", body: f });
+    $("upMsg").textContent = "Indexed " + j.name + " (" + j.chunks + " chunks). Documents are now used when relevant.";
+    $("file").value = "";
+  } catch (e) { $("upMsg").textContent = "Upload failed: " + e.message; }
+  $("upload").disabled = false; loadFiles();
+}
+async function addUrl() {
+  const u = $("url").value.trim();
+  if (!u) return ($("upMsg").textContent = "Paste a web address first.");
+  $("addurl").disabled = true; $("upMsg").textContent = "Reading and indexing the page...";
+  try {
+    const j = await api("/api/addurl", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: u }) });
+    $("upMsg").textContent = "Indexed " + j.name + " (" + j.chunks + " chunks)."; $("url").value = "";
+  } catch (e) { $("upMsg").textContent = "Could not add the page: " + e.message; }
+  $("addurl").disabled = false; loadFiles();
+}
+async function loadSuggestions() {
+  try { suggestions = (await api("/api/suggestions")).questions || []; } catch {}
+  render();
+}
+async function ping() {
+  try { $("online").textContent = "\u25CF " + (await api("/api/ping", { method: "POST" })).online + " online"; }
+  catch { $("online").textContent = "offline"; }
+}
+
+// ---- wiring ----
+const fields = { temperature: "temp", num_ctx: "ctx", num_predict: "pred", keep: "keep", system: "sys" };
+for (const [k, id] of Object.entries(fields)) {
+  const el = $(id), isNum = typeof cfg[k] === "number";
+  el.value = cfg[k];
+  el.oninput = () => { cfg[k] = isNum ? Number(el.value) : el.value; store.set("tc.cfg", cfg); $("tval").textContent = cfg.temperature; };
+}
+$("tval").textContent = cfg.temperature;
+$("model").onchange = e => { cfg.model = e.target.value; store.set("tc.cfg", cfg); };
+$("ask").onclick = ask;
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); ask(); } });
+$("stop").onclick = () => ctl && ctl.abort();
+$("clear").onclick = () => { if (ctl) ctl.abort(); history = []; lastError = ""; store.set("tc.chat", []); render(); };
+$("ragOn").checked = cfg.rag !== false;
+$("ragOn").onchange = e => { cfg.rag = e.target.checked; store.set("tc.cfg", cfg); };
+$("webOn").checked = cfg.web !== false;
+$("webOn").onchange = e => { cfg.web = e.target.checked; store.set("tc.cfg", cfg); };
+$("upload").onclick = upload;
+$("addurl").onclick = addUrl;
+$("export").onclick = () => {
+  const t = history.map(m => (m.role === "user" ? "You: " : "Assistant: ") + m.content +
+    (m.rag && m.rag.sources && m.rag.sources.length ? "\n  Sources: " + m.rag.sources.map((s, i) => "[" + (i + 1) + "] " + (s.url || s.file)).join("; ") : "")).join("\n\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([t], { type: "text/plain" })); a.download = "chat.txt"; a.click();
+};
+const SR = globalThis.SpeechRecognition || globalThis.webkitSpeechRecognition;
+if (SR) { $("mic").hidden = false; $("mic").onclick = () => { const r = new SR(); r.lang = navigator.language || "en-US"; r.onresult = e => { $("q").value = e.results[0][0].transcript.slice(0, 500); }; r.start(); }; }
+loadModels(); loadFiles(); loadSuggestions(); ping(); setInterval(ping, 20000);
+</script>
+</body>
+</html>

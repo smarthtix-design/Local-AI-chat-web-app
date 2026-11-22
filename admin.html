@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tiny Chat admin (this PC only)</title>
+<style>
+  :root { --bg:#f3f4f1; --panel:#fff; --line:#d5d8d0; --text:#1d2420; --muted:#66706a; --accent:#1f6f55; --on:#fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141916; --panel:#1c231f; --line:#35403a; --text:#e6ebe7; --muted:#94a09a; --accent:#3fae88; --on:#0e1612; } }
+  * { box-sizing: border-box; } body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); max-width: 900px; margin: 0 auto; padding: 14px; }
+  h1 { font-size: 1.2rem; } h2 { font-size: 1rem; margin: 18px 0 6px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+  .card, section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .card b { display: block; font-size: 1.4rem; } .sub { color: var(--muted); font-size: .8rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; } td, th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  button { font: inherit; padding: 8px 14px; border: 0; border-radius: 6px; background: var(--accent); color: var(--on); cursor: pointer; margin: 2px 4px 2px 0; }
+  button.alt { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  input { font: inherit; padding: 8px; width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 320px; overflow: auto; }
+</style>
+</head>
+<body>
+<h1>Tiny Chat admin <span class="sub">(only opens on this PC, never through the public link)</span></h1>
+<div class="cards" id="cards"></div>
+<h2>Answers by source</h2><section><table id="modes"></table><div class="sub" id="fb"></div></section>
+<h2>Documents</h2>
+<section>
+  <button id="reindex">Re-index documents/ now</button><button class="alt" id="clear">Delete all visitor uploads</button>
+  <button class="alt" id="net"></button><div class="sub" id="rmsg"></div>
+</section>
+<h2>Debug a question (no model answer is generated)</h2>
+<section><input id="q" placeholder="Type a question and press Enter"><div class="sub" id="route"></div><pre id="dbg"></pre></section>
+<script>
+const $ = id => document.getElementById(id), H = { "Content-Type": "application/json", "X-Admin": "1" };
+const post = (p, b) => fetch(p, { method: "POST", headers: H, body: b ? JSON.stringify(b) : undefined }).then(r => r.json());
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+let inet = true;
+async function load() {
+  const r = await fetch("/api/admin/stats"); if (!r.ok) { document.body.innerHTML = "<p>Not available here.</p>"; return; }
+  const j = await r.json(), s = j.stats; inet = j.internet;
+  $("cards").innerHTML = [["Online now", j.online], ["Answers today", s.today], ["Visitors today", s.visitors_today], ["All answers", s.total], ["Errors", s.errors],
+    ["Model unsure", s.unsure], ["Avg tokens/s", s.avg_tok_s], ["Document chunks", j.shared_chunks ?? "?"], ["Upload chunks", j.upload_chunks ?? "?"]]
+    .map(([a, b]) => `<div class="card"><span class="sub">${a}</span><b>${b}</b></div>`).join("");
+  $("modes").innerHTML = "<tr><th>Source</th><th>Answers</th><th>Avg tok/s</th><th>Avg seconds</th></tr>" +
+    s.by_mode.map(m => `<tr><td>${m.mode}${m.live ? " (live)" : ""}</td><td>${m.count}</td><td>${m.avg_tok_s}</td><td>${m.avg_secs}</td></tr>`).join("");
+  const fb = {}; s.feedback.forEach(f => (fb[f.mode] ??= { up: 0, down: 0 })[f.vote > 0 ? "up" : "down"] += f.count);
+  $("fb").textContent = "Feedback (helpful / not helpful): " + (Object.entries(fb).map(([m, v]) => `${m} ${v.up}/${v.down}`).join(", ") || "none yet");
+  $("net").textContent = "Internet: " + (inet ? "ON (click to turn off)" : "OFF (click to turn on)");
+  $("rmsg").textContent = (j.reindex.running ? "Indexing... " : "") + j.reindex.msg + (j.auto_reindex ? "  (auto re-index is on)" : "");
+}
+$("reindex").onclick = async () => { await post("/api/admin/reindex"); setTimeout(load, 800); };
+$("net").onclick = async () => { await post("/api/admin/internet", { on: !inet }); load(); };
+$("clear").onclick = async () => { if (confirm("Delete every visitor upload?")) { const j = await post("/api/admin/clear-uploads"); $("rmsg").textContent = "Removed " + (j.removed_chunks ?? 0) + " chunks."; load(); } };
+$("q").addEventListener("keydown", async e => {
+  if (e.key !== "Enter") return;
+  const j = await post("/api/admin/debug", { question: $("q").value });
+  $("route").textContent = j.error && !j.route ? j.error : `Route: ${j.route}. Casual: ${j.casual}. Live: ${j.live}. Best document similarity: ${j.best ?? "n/a"} (needs ${j.min_similarity}).`;
+  $("dbg").innerHTML = esc((j.sources || []).map((s, i) => `[${i + 1}] ${s.scope} ${s.file}${s.page ? " p." + s.page : ""} similarity=${s.similarity ?? "-"} keyword=${s.kw}`).join("\n") + "\n\n" + (j.context || "(no document text would be sent)"));
+});
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>

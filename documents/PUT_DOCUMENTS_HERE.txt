@@ -1,0 +1,2 @@
+Copy your PDF, DOCX, TXT and MD files into this folder (subfolders are supported).
+Then run: python rag/ingest.py

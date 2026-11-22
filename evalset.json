@@ -1,0 +1,4 @@
+[
+  {"q": "What is the recommended iOS configuration?", "expect": "Recommended_iOS_Config"},
+  {"q": "Where can I find Intune blogs and communities?", "expect": "blogs-links-communities"}
+]
